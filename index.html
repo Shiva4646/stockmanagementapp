@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Management Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        /* Custom Styles */
+        .progress-bar {
+            height: 10px;
+            border-radius: 5px;
+        }
+        .progress-bar.green { background-color: #10b981; }
+        .progress-bar.yellow { background-color: #facc15; }
+        .progress-bar.red { background-color: #ef4444; }
+        #loading-screen {
+            background: linear-gradient(45deg, #4a90e2, #9013fe);
+            color: white;
+            font-family: 'Arial', sans-serif;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <!-- Loading Page -->
+    <div id="loading-screen" class="fixed inset-0 flex items-center justify-center">
+        <div class="text-center">
+            <h1 class="text-4xl font-bold animate-bounce">Loading...</h1>
+            <div class="mt-4 w-16 h-16 border-4 border-white border-t-transparent rounded-full animate-spin"></div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <header class="bg-white shadow-md p-4 flex justify-between items-center">
+        <h1 class="text-xl font-bold">Stock Management</h1>
+        <div class="flex items-center space-x-4">
+            <input type="text" id="search-bar" placeholder="Search..." class="border rounded px-4 py-2">
+            <button id="add-product-btn" class="bg-blue-500 text-white px-4 py-2 rounded">Add Product</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="p-4 space-y-8">
+        <!-- Inventory Section -->
+        <section id="inventory" class="bg-white shadow rounded-lg p-4">
+            <h2 class="text-lg font-bold mb-4">Inventory</h2>
+            <div id="product-list" class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                <!-- Dynamic Product Cards -->
+            </div>
+        </section>
+
+        <!-- Reports Section -->
+        <section id="reports" class="bg-white shadow rounded-lg p-4">
+            <h2 class="text-lg font-bold mb-4">Reports</h2>
+            <div class="space-y-4">
+                <!-- Sales Overview -->
+                <div class="flex justify-between bg-gray-50 shadow rounded-lg p-4">
+                    <div>
+                        <h3 class="font-bold">Total Sales</h3>
+                        <p id="total-sales" class="text-xl font-bold">$0</p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">Top Seller</h3>
+                        <p id="top-seller" class="text-xl font-bold">N/A</p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">Least Seller</h3>
+                        <p id="least-seller" class="text-xl font-bold">N/A</p>
+                    </div>
+                </div>
+                <!-- Sales Chart -->
+                <div class="bg-gray-50 shadow rounded-lg p-4">
+                    <h3 class="font-bold text-center">Sales Performance</h3>
+                    <div class="chart-container">
+                        <canvas id="sales-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Add/Edit Product Modal -->
+    <div id="add-product-modal" class="fixed inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-lg shadow-lg p-6 w-96">
+            <h2 class="text-lg font-bold mb-4">Add/Edit Product</h2>
+            <form id="add-product-form">
+                <div class="mb-4">
+                    <label for="product-name" class="block font-bold">Product Name</label>
+                    <input type="text" id="product-name" class="w-full border rounded px-4 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label for="product-price" class="block font-bold">Price</label>
+                    <input type="number" id="product-price" class="w-full border rounded px-4 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label for="product-stock" class="block font-bold">Stock</label>
+                    <input type="number" id="product-stock" class="w-full border rounded px-4 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label for="product-sold" class="block font-bold">Sold</label>
+                    <input type="number" id="product-sold" class="w-full border rounded px-4 py-2" required>
+                </div>
+                <div class="mb-4">
+                    <label for="product-image" class="block font-bold">Image URL</label>
+                    <input type="url" id="product-image" class="w-full border rounded px-4 py-2">
+                </div>
+                <div class="flex justify-end space-x-4">
+                    <button type="button" id="cancel-btn" class="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
+                    <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        let products = JSON.parse(localStorage.getItem('products')) || [];
+        let editIndex = null;
+
+        const productList = document.getElementById('product-list');
+        const addProductModal = document.getElementById('add-product-modal');
+        const addProductForm = document.getElementById('add-product-form');
+        const cancelBtn = document.getElementById('cancel-btn');
+
+        let salesChart;
+        const initChart = () => {
+            const ctx = document.getElementById('sales-chart').getContext('2d');
+            salesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Units Sold',
+                        data: [],
+                        backgroundColor: [
+                            'rgba(75, 192, 192, 0.6)',
+                            'rgba(255, 159, 64, 0.6)',
+                            'rgba(255, 99, 132, 0.6)',
+                        ],
+                        borderColor: [
+                            'rgba(75, 192, 192, 1)',
+                            'rgba(255, 159, 64, 1)',
+                            'rgba(255, 99, 132, 1)',
+                        ],
+                        borderWidth: 1,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: false },
+                    },
+                    scales: {
+                        y: { beginAtZero: true },
+                    },
+                },
+            });
+        };
+
+        const displayProducts = () => {
+            productList.innerHTML = '';
+            products.forEach((product, index) => {
+                productList.innerHTML += `
+                    <div class="bg-gray-50 shadow rounded-lg p-4">
+                        <img src="${product.image || 'https://via.placeholder.com/150'}" alt="Product Image" class="w-full h-32 object-cover rounded">
+                        <h3 class="mt-2 font-bold">${product.name}</h3>
+                        <p>Price: $${product.price}</p>
+                        <p>Stock: ${product.stock}</p>
+                        <p>Sold: ${product.sold}</p>
+                        <button onclick="editProduct(${index})" class="bg-yellow-500 text-white px-4 py-2 rounded">Edit</button>
+                        <button onclick="deleteProduct(${index})" class="bg-red-500 text-white px-4 py-2 rounded">Delete</button>
+                    </div>
+                `;
+            });
+        };
+
+        const updateChart = () => {
+            salesChart.data.labels = products.map(p => p.name);
+            salesChart.data.datasets[0].data = products.map(p => p.sold);
+            salesChart.update();
+        };
+
+        const updateReports = () => {
+            const totalSales = products.reduce((sum, p) => sum + (p.sold * p.price), 0);
+            const topSeller = products.reduce((a, b) => (a.sold > b.sold ? a : b), products[0]);
+            const leastSeller = products.reduce((a, b) => (a.sold < b.sold ? a : b), products[0]);
+
+            document.getElementById('total-sales').textContent = `$${totalSales.toFixed(2)}`;
+            document.getElementById('top-seller').textContent = topSeller ? topSeller.name : 'N/A';
+            document.getElementById('least-seller').textContent = leastSeller ? leastSeller.name : 'N/A';
+            updateChart();
+        };
+
+        addProductForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('product-name').value;
+            const price = parseFloat(document.getElementById('product-price').value);
+            const stock = parseInt(document.getElementById('product-stock').value);
+            const sold = parseInt(document.getElementById('product-sold').value);
+            const image = document.getElementById('product-image').value;
+
+            if (editIndex !== null) {
+                products[editIndex] = { name, price, stock, sold, image };
+                editIndex = null;
+            } else {
+                products.push({ name, price, stock, sold, image });
+            }
+
+            localStorage.setItem('products', JSON.stringify(products));
+            addProductModal.classList.add('hidden');
+            displayProducts();
+            updateReports();
+        });
+
+        const editProduct = (index) => {
+            const product = products[index];
+            document.getElementById('product-name').value = product.name;
+            document.getElementById('product-price').value = product.price;
+            document.getElementById('product-stock').value = product.stock;
+            document.getElementById('product-sold').value = product.sold;
+            document.getElementById('product-image').value = product.image;
+
+            editIndex = index;
+            addProductModal.classList.remove('hidden');
+        };
+
+        const deleteProduct = (index) => {
+            products.splice(index, 1);
+            localStorage.setItem('products', JSON.stringify(products));
+            displayProducts();
+            updateReports();
+        };
+
+        document.getElementById('add-product-btn').addEventListener('click', () => {
+            editIndex = null;
+            addProductForm.reset();
+            addProductModal.classList.remove('hidden');
+        });
+
+        cancelBtn.addEventListener('click', () => {
+            addProductModal.classList.add('hidden');
+        });
+
+        window.onload = () => {
+            document.getElementById('loading-screen').style.display = 'none';
+            displayProducts();
+            initChart();
+            updateReports();
+        };
+    </script>
+</body>
+</html>
